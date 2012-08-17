@@ -22,6 +22,9 @@ class Color(ASTNode):
         self.alpha = float(a)
 
 
+    def __repr__(self):
+        return "Color(%r,%r)" % (self.rgb,self.alpha)
+
 	COLORS = {
         'aliceblue':'#f0f8ff',
         'antiquewhite':'#faebd7',

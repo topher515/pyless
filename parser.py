@@ -268,6 +268,7 @@ class Parser(object):
         entities = []
         while True:
             e = self._(self.parse_addition) or self._(self.parse_entity)
+            if not e: break
             entities.append(e)
         if entities:
             return Expression(entities)
@@ -497,9 +498,10 @@ class Parser(object):
         _r(r"\s*")
 
         if name[0] != '@':
+            # 
             match = self._rec(r'^([^@+\/\'"*`(;{}-]*);').match(self.next)
             if match:
-                self.i += len(match.group(0))
+                self.i += len(match.group(0)) - 1
                 value = Anonymous(match.group(1))
 
         elif name == 'font':

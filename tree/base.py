@@ -68,6 +68,8 @@ class Expression(ASTNode):
 	def __init__(self,value):
 		self.value = value
 
+	def __repr__(self):
+		return "Expression(%r)" % self.value
 
 class Import(ASTNode): pass
 class Javascript(ASTNode): pass

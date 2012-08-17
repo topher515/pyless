@@ -12,10 +12,10 @@ class TestAST(unittest.TestCase):
 
 
 
-            
+
             //   LESS
 
-            @color: #4D926F;
+            @color: #01926F;
 
             #header {
               color: @color;
