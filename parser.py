@@ -136,7 +136,7 @@ class Parser(object):
                 a = _(self.parse_multiplication)
                 if not a: break
                 operation = Operation(op, [operation or m, a])
-            return operaiton or m
+            return operation or m
 
 
     @trace    
@@ -197,7 +197,7 @@ class Parser(object):
     @trace
     def parse_color(self):
         if not self.c == '#': return
-        rgb = _(r"^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})")
+        rgb = self._r(r"^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})")
         if rgb:
             return Color(rgb[1])
 
@@ -236,6 +236,12 @@ class Parser(object):
         value = _r(r"^(-?\d*\.?\d+)(px|%|em|pc|ex|in|deg|s|ms|pt|cm|mm|rad|grad|turn|dpi|dpcm|dppx|rem|vw|vh|vmin|vm|ch)?")
         if value:
             return Dimension(value[1],value[2])
+
+
+    @trace
+    def parse_directive(self):
+        # TODO: Implement!
+        return None
 
 
     @trace
@@ -395,10 +401,10 @@ class Parser(object):
         root = []
 
         while True:
-            _r(r'\s*')
             node = _(self.parse_mixin_definition) or _(self.parse_rule) or \
                 _(self.parse_ruleset) or _(self.parse_mixin_call) or \
-                _(self.parse_comment)
+                _(self.parse_comment) or _(self.parse_directive) or \
+                _r(r"^[\s\n]+")
             if node:
                 root.append(node)
             else:
@@ -487,6 +493,8 @@ class Parser(object):
         name = _(self.parse_variable_def) or _(self.parse_property)
         if not name: 
             return
+
+        _r(r"\s*")
 
         if name[0] != '@':
             match = self._rec(r'^([^@+\/\'"*`(;{}-]*);').match(self.next)
@@ -600,6 +608,7 @@ class Parser(object):
         self.expect(")")
 
         return URL() # TODO: Implement this
+
 
     @trace
     def parse_value(self):

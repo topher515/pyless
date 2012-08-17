@@ -1,8 +1,8 @@
-from .base import Rule
+from .base import ASTNode
 
-class Color(Rule):
+class Color(ASTNode):
 
-    def __init__(self,rgb,a=None):
+    def __init__(self,rgb,a=1.0):
 
         if type(rgb) in (list,tuple):
             self.rgb = rgb
@@ -19,10 +19,7 @@ class Color(Rule):
                     int(rgb[2]*2, 16)
                 )
 
-        try:
-            self.alpha = float(a)
-        except ValueError:
-            self.alpha = 1
+        self.alpha = float(a)
 
 
 	COLORS = {
