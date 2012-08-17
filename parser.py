@@ -1,16 +1,21 @@
 import re
 from tree import *
 import sys
+import string
+
+
+digits = set(string.digits)
 
 stack = []
 
 def trace(func):
-    def wrapped(*args,**kwargs):
+    def wrapped(self, *args, **kwargs):
         stack.append(" ")
-        print ("".join(stack) + func.__name__)
-        r = func(*args,**kwargs)
+        s = "".join(stack)
+        print "%s%s \t\t\t\t%s: %r..." % (s,func.__name__ ,self.i,self.next[:10])
+        r = func(self, *args, **kwargs)
         if r:
-            print ("".join(stack) + str(r))
+            print (s + repr(r))
         stack.pop()
         return r
     return wrapped
@@ -22,7 +27,6 @@ class ParseError(Exception):
 
 class Parser(object):
 
-
     def __init__(self,input=None):
         self.i = 0
         #self.last_length = None
@@ -32,6 +36,7 @@ class Parser(object):
 
     c = property(lambda self: self.input[self.i])
 
+    next = property(lambda self: self.input[self.i:])  # TODO: Will this be slow?
 
     @property
     def parsers(self):
@@ -39,6 +44,7 @@ class Parser(object):
 
     def _get_context(self):
         return self.i, self._, self._r
+
 
     def _rec(self, strn):
         try:
@@ -48,7 +54,9 @@ class Parser(object):
             return self._re_cache[strn]
 
     def _r(self, tok_re):
-        return self._(self._rec(tok_re))
+        r = self._rec(tok_re)
+        x = self._(r)
+        return x
 
     def _(self, tok):
         """
@@ -59,6 +67,8 @@ class Parser(object):
         with the first element the string of that expression and 
         additional parenthetical matches as strings following.
         """
+
+        #print "Using %s to check `%s`" % (tok,self.input[self.i:self.i+15])
 
         # Handle function
         if hasattr(tok,'__call__'):
@@ -73,15 +83,14 @@ class Parser(object):
 
         # Handle regex
         elif hasattr(tok,'match'):
-
             #sync()
-            match = tok.match(self.input)
+            match = tok.match(self.next)
             if match:
                 length = len(match.group(0))
             else:
                 return None
 
-        # If we have a match advance pointer and 
+        # If we have a match, advance pointer and 
         # return match
         if match:
             self.i += length
@@ -113,6 +122,22 @@ class Parser(object):
             raise ParseError(msg)
 
 
+    @trace
+    def parse_addition(self):
+        i,_,_r = self._get_context()
+        m = _(self.parse_multiplication)
+        operation = None
+
+        if m:
+            while True:
+                op = _r(r"^[-+]\s+") or \
+                    (self.input[self.i-1] != ' ' and (_('+') or _('-')))
+                if not op: break
+                a = _(self.parse_multiplication)
+                if not a: break
+                operation = Operation(op, [operation or m, a])
+            return operaiton or m
+
 
     @trace    
     def parse_arguments(self):
@@ -126,6 +151,7 @@ class Parser(object):
             value = _(self.entity)
             if value:
                 return Assignment(key,value)
+
 
     @trace        
     def parse_attribute(self):
@@ -145,6 +171,7 @@ class Parser(object):
         if not _("["): return
         if attr: return "[" + attr + "]"
 
+
     @trace
     def parse_block(self):
         """
@@ -159,6 +186,22 @@ class Parser(object):
             content = _(self.parse_primary)
             if content and _("}"):
                 return content
+
+
+    @trace
+    def parse_cssfunc_call(self):
+        # TODO: Implement!
+        return None
+
+
+    @trace
+    def parse_color(self):
+        if not self.c == '#': return
+        rgb = _(r"^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})")
+        if rgb:
+            return Color(rgb[1])
+
+
     @trace        
     def parse_combinator(self):
         c = self.input[self.i]
@@ -179,9 +222,33 @@ class Parser(object):
         if self.input[i + 1] == '/':
             return Comment(_r(r"^// .*"), True)
         else:
-            comment = _(r"^\/\*(?:[^*]|\*+[^\/*])*\*+\/\n?")
+            comment = _r(r"^\/\*(?:[^*]|\*+[^\/*])*\*+\/\n?")
             if comment:
                 return Comment(comment)
+
+
+    @trace
+    def parse_dimension(self):
+        i,_,_r = self._get_context()
+
+        if self.input[i] in digits: return
+
+        value = _r(r"^(-?\d*\.?\d+)(px|%|em|pc|ex|in|deg|s|ms|pt|cm|mm|rad|grad|turn|dpi|dpcm|dppx|rem|vw|vh|vmin|vm|ch)?")
+        if value:
+            return Dimension(value[1],value[2])
+
+
+    @trace
+    def parse_entity(self):
+        for func in [
+                self.parse_literal, self.parse_variable,
+                self.parse_url, self.parse_cssfunc_call, 
+                self.parse_keyword, self.parse_javascript,
+                self.parse_comment
+            ]:
+            result = self._(func)
+            if result: return result
+
 
     @trace    
     def parse_expression(self):
@@ -194,15 +261,40 @@ class Parser(object):
         """
         entities = []
         while True:
-            e = _(self.parse_addition) or _(parse_entity)
+            e = self._(self.parse_addition) or self._(self.parse_entity)
             entities.append(e)
         if entities:
             return Expression(entities)
+
 
     @trace
     def parse_important(self):
         if self.c == '|':
             return self._r(r'^! *important')
+
+
+    @trace
+    def parse_javascript(self):
+        # TODO: Implement
+        return None
+
+
+    @trace
+    def parse_keyword(self):
+        k = self._r(r"^[_A-Za-z-][_A-Za-z0-9-]*")
+        if not k: return
+        if k in Color.COLORS:
+            return Color(Color.COLORS[k][1:])
+        else:
+            return Keyword(k)
+
+
+    @trace
+    def parse_literal(self):
+        _ = self._
+        return _(self.parse_ratio) or _(self.parse_dimension) or \
+                _(self.parse_color) or _(self.parse_quoted)
+
 
     @trace    
     def parse_mixin_call(self):
@@ -268,9 +360,34 @@ class Parser(object):
         """
         i,_,_r = self._get_context()
 
+
+    @trace
+    def parse_multiplication(self):
+        _ = self._
+        m = _(self.parse_operand)
+        operation = None
+        while True:
+            if self.peek(r"^\/\*"): break
+            op = _('/') or _('*')
+            if not op: break
+            a = _(self.parse_operand)
+            if not a: break
+            operation = Operation(op, [operation or m, a])
+        return operation or m
+
+
     @trace
     def parse_operand(self):
-        raise NotImplementedError
+        _ = self._
+        p = self.input[self.i+1]
+        negate = None
+        if self.c == '-' and (p == '@' or p == '('):
+            negate = _('-')
+        o = _(self.parse_sub) or _(self.parse_dimension) or \
+            _(self.parse_color) or _(self.parse_variable) or \
+            _(self.parse_cssfunc_call)
+        return Operation('*', [Dimension(-1, o)]) if negate else o
+
 
     @trace
     def parse_primary(self):
@@ -278,8 +395,10 @@ class Parser(object):
         root = []
 
         while True:
+            _r(r'\s*')
             node = _(self.parse_mixin_definition) or _(self.parse_rule) or \
-                _(self.parse_ruleset) or _(self.parse_mixin_call) or _(self.parse_comment)
+                _(self.parse_ruleset) or _(self.parse_mixin_call) or \
+                _(self.parse_comment)
             if node:
                 root.append(node)
             else:
@@ -299,6 +418,25 @@ class Parser(object):
         name = self._r(r"^(\*?-?[_a-z0-9-]+)\s*:")
         return name[1] if name else None
 
+
+    @trace
+    def parse_quoted(self):
+        i,_,_r = self._get_context()
+        j = i
+        e = None
+
+        if self.input[j] == '~':
+            j+=1
+            e = True
+        if self.input[j] != '"' and self.input[j] != "'": return
+
+        if e: _('~')
+
+        # TODO: Is this regex is broken?
+        strn = _r(r'^"((?:[^"\\\r\n]|\\.)*)"|\'((?:[^\'\\\r\n]|\\.)*)\'')
+        if strn:
+            return Quoted(strn[0], strn[1] or strn[2], e)
+
     @trace
     def parse_ratio(self):
         """
@@ -307,9 +445,8 @@ class Parser(object):
             `16/9`
 
         """
-        if not Ratio.ok(self.input[self.i]):
-            return
-        value = _(Ratio.REGEX)
+        if self.c not in digits: return
+        value = self._r(r"^(\d+\/\d+)")
         if value:
             return Ratio(value[1])
 
@@ -343,15 +480,16 @@ class Parser(object):
         >>> p.parse_rule()
         <Rule value="@foobar">
         """
-        i,_,_r = self._get_context()
         if self.c in ['.','#','&']: return
+        i,_,_r = self._get_context()
+        value = None
 
         name = _(self.parse_variable_def) or _(self.parse_property)
         if not name: 
             return
 
         if name[0] != '@':
-            match = self.rec(r'^([^@+\/\'"*`(;{}-]*);').match(self.input)
+            match = self._rec(r'^([^@+\/\'"*`(;{}-]*);').match(self.next)
             if match:
                 self.i += len(match.group(0))
                 value = Anonymous(match.group(1))
@@ -360,10 +498,10 @@ class Parser(object):
             value = _(self.parse_font)
         else:
             value = _(self.parse_value)
-        important = _(self.important)
+        important = _(self.parse_important)
 
-        if value and _(this.end):
-            return Rule(name, value, important, memo)
+        if value and _(self.parse_end):
+            return Rule(name, value, important, memo="")
 
     @trace    
     def parse_selector(self):
@@ -394,6 +532,16 @@ class Parser(object):
         if elements:
             return Selector(elements)
 
+
+    @trace
+    def parse_sub(self):
+        _ = self._
+        if not _("("): return
+        e = _(self.parse_expression)
+        if e and _(")"):
+            return e
+
+
     @trace    
     def parse_element(self):
         """
@@ -407,6 +555,7 @@ class Parser(object):
         """
         i,_,_r = self._get_context()
         c = _(self.parse_combinator)
+        j = self.i
         e = _r(r"^(?:\d+\.\d+|\d+)%") or \
             _r(r"^(?:[.#]?|:*)(?:[\w-]|\\(?:[A-Fa-f0-9]{1,6} ?|[^A-Fa-f0-9]))+") or \
             _("*") or _("&") or _(self.parse_attribute) or _r(r"^\([^)@]+\)")
@@ -418,7 +567,11 @@ class Parser(object):
                     e = Paren(v)
 
         if e:
-            return 
+            # TODO: Confirm this is reasonable
+            _r(r"\s*")
+            return Element(c,e,j)
+
+
     @trace    
     def parse_end(self):
         """
@@ -438,7 +591,7 @@ class Parser(object):
     @trace
     def parse_url(self):
         _ = self._
-        if self.input[i] != 'u' or not self._r(r"/^url\(/"):
+        if self.c != 'u' or not self._r(r"/^url\(/"):
             return
 
         value = _(self.parse_quoted) or _(self.parse_variable) \
@@ -447,6 +600,28 @@ class Parser(object):
         self.expect(")")
 
         return URL() # TODO: Implement this
+
+    @trace
+    def parse_value(self):
+        """A Value is a comma-delimited list of Expressions
+        
+            `font-family: Baskerville, Georgia, serif;`
+        
+        In a Rule, a Value represents everything after the `:`,
+        and before the `;`.
+
+        >>> p = Parser("Baskerville, Georgia, serif;")
+        >>> p.parse_value()
+        """
+        expressions = []
+
+        while True:
+            e = self._(self.parse_expression)
+            expressions.append(e)
+            if not self._(","): break
+
+        if len(expressions) > 0:
+            return Value(expressions)
 
     @trace
     def parse_variable_def(self):
@@ -496,6 +671,6 @@ class Parser(object):
         Parse an input string into an abstract syntax tree
         """
         self.i = 0 # Position of scanning in input reset to 0
-        self.input = strn.replace("\r\n","\n").strip() # Use 'normal' newlines
+        self.input = strn.replace("\r\n","\n") # Use 'normal' newlines
         self.root = self._(self.parse_primary)
 

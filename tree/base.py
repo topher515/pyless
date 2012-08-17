@@ -10,6 +10,7 @@ class ASTNode(object):
 
 
 class Anonymous(ASTNode): pass
+class Assignment(ASTNode): pass
 
 class MixinCall(ASTNode): pass
 
@@ -38,18 +39,25 @@ class Comment(ASTNode):
 
 
 class Condition(ASTNode): pass
-class Dimension(ASTNode): pass
+class Dimension(ASTNode):
+	def __init__(self, value, unit=None):
+		self.value = float(value)
+		self.unit = unit
+
+	def __repr__(self):
+		return "Dimension(%r,%r)" % (self.value,self.unit)
+
 class Directive(ASTNode): pass
 
 class Element(ASTNode):
 	def __init__(self, combinator, value, index):
-		self.combinator = cominbinator if isinstance(combinator,Combinator) \
+		self.combinator = combinator if isinstance(combinator,Combinator) \
 			else Combinator(combinator)
 		self.value = value
 		self.index = index
 
 	def __str__(self):
-		return "<Element '%r%r'>" % (self.combinator, self.value)
+		return "<Element '%s %s'>" % (self.combinator.value, self.value)
 
 	def __repr__(self):
 		return "Element(combinator=%r, value=%r, index=%r)" % (
@@ -64,33 +72,55 @@ class Expression(ASTNode):
 class Import(ASTNode): pass
 class Javascript(ASTNode): pass
 
+class Keyword(ASTNode):
+	def __init__(self, value):
+		self.value = value
+
+	def __repr__(self):
+		return "Keyword(%r)" % self.value
+
+	def to_css(self):
+		return this.value
+
+
 class Media(ASTNode): pass
 class Mixin(ASTNode): pass
-class Operation(ASTNode): pass
+class Operation(ASTNode):
+	def __init__(self,op,operands):
+		self.op = op
+		self.operands = operands
+
+	def __repr__(self):
+		return "Operation(%r,%r)" % (self.op, self.operands)
+
 class Paren(ASTNode):
 	def __init__(self,node):
 		self.value = node
 
-class Quoted(ASTNode): pass
-class Ratio(ASTNode):
+class Quoted(ASTNode):
+	def __init__(self, strn, content, escaped, i):
+		self.escaped = escaped
+		self.value = content or ''
+		self.quote = srtn[0]
+		self.index = i
 
-	@classmethod
-	def ok(cls,strn):
-		try:
-			int(strn[0])
-			return True
-		except ValueError:
-			return False
+	def __repr__(self):
+		return "Quoted(%s,%s,%s,%s)" % (self.quote, self.value, self.escaped, self.index)
+
+
+class Ratio(ASTNode):
+	def __init__(self,value):
+		self.value = value
 
 class Rule(ASTNode):
 	def __init__(self, name, value, important, memo):
 		self.name = name
 		self.value = value
-		self.important = important
+		self.important = bool(important)
 		self.memo = memo
 
 	def __repr__(self):
-		return "Rule(name=%r,value=%r,important=%r,memo=%r)" % (
+		return "Rule(%r,%r,important=%r,memo=%r)" % (
 			self.name, self.value, self.important, self.memo
 			)
 
@@ -113,32 +143,31 @@ class Selector(ASTNode):
 		self.elements = elements
 
 	def __str__(self):
-		return " ".join(elements)
+		return " ".join([str(x) for x in self.elements])
 
 	def __repr__(self):
-		return "Selector(elements=%r" % self.elements
+		return "Selector(elements=%r)" % self.elements
 
-class Value(ASTNode): pass
+
+class URL(ASTNode): pass
+
+
+class Value(ASTNode):
+	def __init__(self, value):
+		self.value = value
+
+	def __repr__(self):
+		return "Value(value=%r)" % self.value
+
 class Variable(ASTNode):
 	def __init__(self, name, index, filename):
 		self.name = name
 		self.index = index
 		self.filename = filename
+
 	def __repr__(self):
 		return "Variable(name=%r,index=%r,filename=%s" % (
 			self.name,self.index,self.filename)
 
 
 
-class Keyword(ASTNode):
-
-	def __init__(self,value):
-		self.value = value
-
-	def to_css(self):
-		return this.value
-
-
-class Assignment(ASTNode): pass
-
-class URL(ASTNode): pass

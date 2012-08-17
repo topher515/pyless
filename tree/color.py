@@ -1,6 +1,30 @@
 from .base import Rule
 
 class Color(Rule):
+
+    def __init__(self,rgb,a=None):
+
+        if type(rgb) in (list,tuple):
+            self.rgb = rgb
+        elif len(rgb) == 6:
+            self.rgb = (
+                    int(rgb[:2], 16),
+                    int(rgb[2:4], 16),
+                    int(rgb[4:], 16)
+                )
+        elif len(rgb) == 3:
+            self.rgb = (
+                    int(rgb[0]*2, 16),
+                    int(rgb[1]*2, 16),
+                    int(rgb[2]*2, 16)
+                )
+
+        try:
+            self.alpha = float(a)
+        except ValueError:
+            self.alpha = 1
+
+
 	COLORS = {
         'aliceblue':'#f0f8ff',
         'antiquewhite':'#faebd7',
@@ -151,4 +175,6 @@ class Color(Rule):
         'yellow':'#ffff00',
         'yellowgreen':'#9acd32'
     }
+
+
 

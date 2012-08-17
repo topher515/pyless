@@ -9,7 +9,11 @@ class TestAST(unittest.TestCase):
 
     def test_tree(self):
         self.p.parse("""
-            // LESS
+
+
+
+            
+            //   LESS
 
             @color: #4D926F;
 
