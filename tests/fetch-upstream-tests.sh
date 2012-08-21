@@ -15,5 +15,5 @@ git fetch origin;
 git merge origin/master;
 
 # Extract tests
-git checkout-index -q --prefix="../upstream/" -- test/css/* test/less/{errors,import,*}/*;
+git checkout-index -q --prefix="../upstream/" -- test/css/* test/less/* test/less/{errors,import,*}/*;
 popd;
