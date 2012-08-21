@@ -3,6 +3,8 @@ from tree import *
 import sys
 import string
 
+import pdb
+
 
 digits = set(string.digits)
 
@@ -127,7 +129,7 @@ class Parser(object):
         if isinstance(tok, basestring):
             return self.c == tok
         else:
-            return bool(tok.match(self.input))
+            return bool(tok.match(self.next))
 
 
     def expect(self,arg,msg=None):
@@ -136,7 +138,7 @@ class Parser(object):
             return res
         else:
             msg = msg or \
-                "expected '%s' got '%s'" % (arg,self.input[i]) or \
+                "expected '%s' got '%s'" % (arg,self.c) or \
                 "unexpected token"
             raise ParseError(msg)
 
@@ -380,7 +382,6 @@ class Parser(object):
 
 
 
-
     @trace    
     def parse_mixin_definition(self):
         """
@@ -391,21 +392,22 @@ class Parser(object):
         i,_,_r = self._get_context()
         variadic = False
         params = []
-        if self.c != '.' and self.c != '#' or \
+        if (self.c != '.' and self.c != '#') or \
             self.peek(self._rec(r"^[^{]*(;|})")):
             return
 
-        match = _(r"^([#.](?:[\w-]|\\(?:[A-Fa-f0-9]{1,6} ?|[^A-Fa-f0-9]))+)\s*\(")
+        match = _r(r"^([#.](?:[\w-]|\\(?:[A-Fa-f0-9]{1,6} ?|[^A-Fa-f0-9]))+)\s*\(")
         if match:
             name = match[1]
 
+
             while True:
-                if self.c == '.' and _r(r"^\.{3}/"):
+                if self.c == '.' and _r(r"^\.{3}"):
                     # TODO: CKW: Huh? I dont understand variadic
                     variadic = True
                     break
                 
-                param = _(self.parse_variable) or parse_literal or \
+                param = _(self.parse_variable) or _(self.parse_literal) or \
                             _(self.parse_keyword)
                 if param:
                     if isinstance(param,Variable):
@@ -421,16 +423,20 @@ class Parser(object):
 
                 else:
                     break
-                if not _(","):
+
+
+                if not _r(r",\s*"):
                     break
 
-                if _r(r"^when"):
-                    conf = expect(self.parse_conditions, 'expected condition')
+            _r(r"\)\s*")
 
-                ruleset = _(self.parse_block)
+            if _r(r"^when"):
+                conf = self.expect(self.parse_conditions, 'expected condition')
 
-                if ruleset:
-                    return Definition(name,params,ruleset,cond,variadic)
+            ruleset = _(self.parse_block)
+
+            if ruleset:
+                return Definition(name,params,ruleset,cond,variadic)
 
     @trace
     def parse_multiplication(self):
@@ -750,4 +756,12 @@ class Parser(object):
         self.root = Ruleset([], self._(self.parse_primary))
 
 
+    def compile(self, strn):
+        self.parse(strn)
+
+        return ""
+
+
+def compile(strn):
+    return Parser().compile(strn)
 
