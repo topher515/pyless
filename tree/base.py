@@ -8,11 +8,48 @@ class ASTNode(object):
 	def eval(self):
 		return self
 
+	def __eq__(self,other):
+		return repr(self) == repr(other)
+
+	def __ne__(self,other):
+		return not super(ASTNode,self).__eq__(other)
+
 
 class Anonymous(ASTNode): pass
 class Assignment(ASTNode): pass
 
-class MixinCall(ASTNode): pass
+class MixinDefinition(ASTNode):
+	def __init__(self, name, params, rules, condition, variadic):
+		self.name = name
+		self.selectors = [Selector([Element(None,name)])]
+		self.params = params
+		self.condition = condition
+		self.variadic = variadic
+		self.arity = len(params)
+		self.rules = rules
+		self._lookups = {}
+		self.required = 0
+		# Count required parameters
+		for p in params:
+			if p.get('name') and not p.get('value') or \
+				not p.get('name'):
+				self.required += 1
+		self.frames = []
+
+
+class MixinCall(ASTNode):
+	def __init__(self,elements, args, index, filename, important):
+		self.elements = elements
+		self.args = args
+		self.index = index
+		self.filename = filename
+		self.important = important
+
+	def __repr__(self):
+		return "MixinCall(%r,%r,%r,%r,%r)" % (
+				self.elements, self.args,
+				self.index, self.filename, self.important
+			)
 
 class Combinator(ASTNode):
 	def __init__(self,value):
@@ -127,7 +164,7 @@ class Rule(ASTNode):
 			)
 
 class Ruleset(ASTNode):
-	def __init__(self,selectors, rules, strict_import):
+	def __init__(self,selectors, rules, strict_import=False):
 		self.selectors = selectors
 		self.rules = rules
 		self.strict_import = strict_import
@@ -136,7 +173,7 @@ class Ruleset(ASTNode):
 		return "<Ruleset selectors=%s>" % self.selectors
 
 	def __repr__(self):
-		return "Ruleset(selectors=%r,rules=%r,strict_import=%r" % (
+		return "Ruleset(selectors=%r,rules=%r,strict_import=%r)" % (
 			self.selectors, self.rules, self.strict_import
 			)
 
@@ -168,7 +205,7 @@ class Variable(ASTNode):
 		self.filename = filename
 
 	def __repr__(self):
-		return "Variable(name=%r,index=%r,filename=%s" % (
+		return "Variable(name=%r,index=%r,filename=%s)" % (
 			self.name,self.index,self.filename)
 
 

@@ -25,18 +25,37 @@ class ParseError(Exception):
     pass
 
 
+
+class ParseInput(str):
+    def __getitem__(self,key):
+        try:
+            return super(ParseInput,self).__getitem__(key)
+        except IndexError:
+            return ''
+
+
+
 class Parser(object):
 
-    def __init__(self,input=None):
+    def __init__(self,input="",filename=None):
         self.i = 0
         #self.last_length = None
-        self.input = input
+        self.input = ParseInput(input)
         self._re_cache = {}
         self.strict_imports = False
+        self.filename = filename
 
-    c = property(lambda self: self.input[self.i])
+    @property
+    def c(self):
+        try:
+            return self.input[self.i]
+        except IndexError:
+            return ''
+        #return self.input[self.i]
 
-    next = property(lambda self: self.input[self.i:])  # TODO: Will this be slow?
+    @property
+    def next(self):
+        return self.input[self.i:]  # TODO: Will this be slow?
 
     @property
     def parsers(self):
@@ -77,8 +96,8 @@ class Parser(object):
 
         # Handle string
         elif isinstance(tok, basestring):
-            match = tok if self.input[self.i] == tok else None
-            length = 1
+            match = tok if self.next[:len(tok)] == tok else None
+            length = len(tok)
             #sync()
 
         # Handle regex
@@ -204,10 +223,10 @@ class Parser(object):
 
     @trace        
     def parse_combinator(self):
-        c = self.input[self.i]
+        c = self.c
         if c in [">","+","~"]:
             self.i += 1
-            while self.input[self.i] == ' ':
+            while self.c == ' ':
                 self.i += 1
             return Combinator(c)
         elif self.input[self.i - 1] == ' ':
@@ -218,7 +237,7 @@ class Parser(object):
     @trace    
     def parse_comment(self):
         i,_,_r = self._get_context()
-        if self.input[i] != '/': return
+        if self.c != '/': return
         if self.input[i + 1] == '/':
             return Comment(_r(r"^// .*"), True)
         else:
@@ -317,6 +336,7 @@ class Parser(object):
         <MixinCall>
         """
         i,_,_r = self._get_context()
+        j = i
         elements = []
         args = []
         important = False
@@ -330,7 +350,7 @@ class Parser(object):
             c = _(">")
 
         # Parse the arguments to the mixin call
-        if self._("("):
+        if _("("):
             while True:
                 arg = _(self.parse_expression)
                 value = arg
@@ -355,8 +375,11 @@ class Parser(object):
         if _(self.parse_important):
             important = True
 
-        if elements and _(";") or self.peek("}"):
-            return MixinCall(elements, args, index, self.filename, important)
+        if elements and (_(";") or self.peek("}")):
+            return MixinCall(elements, args, j, self.filename, important)
+
+
+
 
     @trace    
     def parse_mixin_definition(self):
@@ -366,7 +389,48 @@ class Parser(object):
         >>> p.parse_mixin_definition()
         """
         i,_,_r = self._get_context()
+        variadic = False
+        params = []
+        if self.c != '.' and self.c != '#' or \
+            self.peek(self._rec(r"^[^{]*(;|})")):
+            return
 
+        match = _(r"^([#.](?:[\w-]|\\(?:[A-Fa-f0-9]{1,6} ?|[^A-Fa-f0-9]))+)\s*\(")
+        if match:
+            name = match[1]
+
+            while True:
+                if self.c == '.' and _r(r"^\.{3}/"):
+                    # TODO: CKW: Huh? I dont understand variadic
+                    variadic = True
+                    break
+                
+                param = _(self.parse_variable) or parse_literal or \
+                            _(self.parse_keyword)
+                if param:
+                    if isinstance(param,Variable):
+                        if _(':'):
+                            value = expect(self.parse_expression, 'expected expression')
+                            params.append({"name": param.name, "value":value})
+                        elif _(r"^\.{3}"):
+                            params.append({"name":param.name, "value":value})
+                        else:
+                            params.append({"name":param.name})
+                    else:
+                        params.append({"value":param})
+
+                else:
+                    break
+                if not _(","):
+                    break
+
+                if _r(r"^when"):
+                    conf = expect(self.parse_conditions, 'expected condition')
+
+                ruleset = _(self.parse_block)
+
+                if ruleset:
+                    return Definition(name,params,ruleset,cond,variadic)
 
     @trace
     def parse_multiplication(self):
@@ -404,12 +468,13 @@ class Parser(object):
         while True:
             node = _(self.parse_mixin_definition) or _(self.parse_rule) or \
                 _(self.parse_ruleset) or _(self.parse_mixin_call) or \
-                _(self.parse_comment) or _(self.parse_directive) or \
-                _r(r"^[\s\n]+")
+                _(self.parse_comment) or _(self.parse_directive)
+            
             if node:
                 root.append(node)
             else:
-                break
+                if not _r(r"^[\s\n]+"):
+                    break
 
         return root
 
@@ -497,12 +562,10 @@ class Parser(object):
 
         _r(r"\s*")
 
-        if name[0] != '@':
-            # 
-            match = self._rec(r'^([^@+\/\'"*`(;{}-]*);').match(self.next)
-            if match:
-                self.i += len(match.group(0)) - 1
-                value = Anonymous(match.group(1))
+        match = self._rec(r'^([^@+\/\'"*`(;{}-]*);').match(self.next)
+        if name[0] != '@' and match:
+            self.i += len(match.group(0)) - 1
+            value = Anonymous(match.group(1))
 
         elif name == 'font':
             value = _(self.parse_font)
@@ -660,10 +723,11 @@ class Parser(object):
         >>> p.parse_variable()
         <Variable name=fink>
         """
+        j = self.i
         if self.c == '@':
             name = self._r(r'^@@?[\w-]+')
             if name:
-                return Variable(name, index, self.filename)
+                return Variable(name, j, self.filename)
 
     @trace        
     def parse_data_uri(self):
@@ -682,6 +746,8 @@ class Parser(object):
         Parse an input string into an abstract syntax tree
         """
         self.i = 0 # Position of scanning in input reset to 0
-        self.input = strn.replace("\r\n","\n") # Use 'normal' newlines
-        self.root = self._(self.parse_primary)
+        self.input = ParseInput(strn.replace("\r\n","\n")) # Use 'normal' newlines
+        self.root = Ruleset([], self._(self.parse_primary))
+
+
 
