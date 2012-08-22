@@ -11,6 +11,7 @@ digits = set(string.digits)
 stack = []
 
 def trace(func):
+    return func
     def wrapped(self, *args, **kwargs):
         stack.append(" ")
         s = "".join(stack)
@@ -20,6 +21,10 @@ def trace(func):
             print (s + repr(r))
         stack.pop()
         return r
+    # So doctests still work...
+    wrapped.__module__ = func.__module__
+    wrapped.__doc__ = func.__doc__
+    wrapped.__name__ = func.__name__
     return wrapped
 
 
@@ -46,6 +51,11 @@ class Parser(object):
         self._re_cache = {}
         self.strict_imports = False
         self.filename = filename
+
+        # TODO: Implement importing
+        self.imports = {
+            "paths": []
+        }
 
     @property
     def c(self):
@@ -217,6 +227,12 @@ class Parser(object):
 
     @trace
     def parse_color(self):
+        """
+        >>> Parser('#fff').parse_color()
+        Color((255, 255, 255),1.0)
+        >>> Parser('#34DF02').parse_color()
+        Color((52, 223, 2),1.0)
+        """
         if not self.c == '#': return
         rgb = self._r(r"^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})")
         if rgb:
@@ -250,9 +266,21 @@ class Parser(object):
 
     @trace
     def parse_dimension(self):
+        """
+        A number and a unit
+
+        e.g.,
+            0.5em
+            95%
+
+        >>> Parser("198.5px").parse_dimension()
+        Dimension(198.5,'px')
+        >>> Parser("-14em").parse_dimension()
+        Dimension(-14.0,'em')
+        """
         i,_,_r = self._get_context()
 
-        if self.input[i] in digits: return
+        #if self.input[i] in digits: return
 
         value = _r(r"^(-?\d*\.?\d+)(px|%|em|pc|ex|in|deg|s|ms|pt|cm|mm|rad|grad|turn|dpi|dpcm|dppx|rem|vw|vh|vmin|vm|ch)?")
         if value:
@@ -279,12 +307,9 @@ class Parser(object):
 
     @trace    
     def parse_expression(self):
-        """
-        Expressions either represent mathematical operations,
+        """Expressions either represent mathematical operations,
         or white-space delimited Entities.
 
-        >>> Parser("1px solid black").parse_expression()
-        <Expression value="1px solid black">
         """
         entities = []
         while True:
@@ -309,6 +334,9 @@ class Parser(object):
 
     @trace
     def parse_keyword(self):
+        """
+
+        """
         k = self._r(r"^[_A-Za-z-][_A-Za-z0-9-]*")
         if not k: return
         if k in Color.COLORS:
@@ -328,14 +356,14 @@ class Parser(object):
     def parse_mixin_call(self):
         """
         A Mixin call, with an optional argument list
-        
-        >>> p = Parser('''
+
+        e.g.,
             #mixins > .square(#fff);
             .rounded(4px, black);
             .button;
-        ''')
-        >>> p.parse_mixin_call()
-        <MixinCall>
+        
+
+        >>> Parser('#mixins > .square(#fff);').parse_mixin_call()
         """
         i,_,_r = self._get_context()
         j = i
@@ -412,7 +440,7 @@ class Parser(object):
                 if param:
                     if isinstance(param,Variable):
                         if _(':'):
-                            value = expect(self.parse_expression, 'expected expression')
+                            value = self.expect(self.parse_expression, 'expected expression')
                             params.append({"name": param.name, "value":value})
                         elif _(r"^\.{3}"):
                             params.append({"name":param.name, "value":value})
@@ -499,6 +527,15 @@ class Parser(object):
 
     @trace
     def parse_quoted(self):
+        """
+        A string, which supports escaping " and '
+
+        e.g.,
+            "milky way" 'he\'s the one!'
+
+        >>> Parser('"milky way"').parse_quoted()
+        #Quoted("milky way")
+        """
         i,_,_r = self._get_context()
         j = i
         e = None
@@ -522,6 +559,8 @@ class Parser(object):
 
             `16/9`
 
+        >>> Parser("16/9").parse_ratio()
+        Ratio('16/9')
         """
         if self.c not in digits: return
         value = self._r(r"^(\d+\/\d+)")
@@ -531,9 +570,7 @@ class Parser(object):
     @trace    
     def parse_ruleset(self):
         """
-        >>> p = Parser("div, .class, body > p {...}")
-        >>> p.parse_ruleset()
-        <Ruleset selectors=["div",".class","body > p"]>
+
         """
         selectors = []
 
@@ -554,9 +591,13 @@ class Parser(object):
     @trace    
     def parse_rule(self):
         """
-        >>> p = Parser("@foobar;")
+        A rule is either a variable definition or a property definition.
+
+        >>> p = Parser("@foobar:18px;width:@foobar;")
         >>> p.parse_rule()
-        <Rule value="@foobar">
+        Rule('@foobar',Value([Expression([Dimension(18.0,'px')])]),False,'')
+        >>> p.parse_rule()
+        Rule('width',Value([Expression([Variable(name='@foobar',index=19,filename=None)])]),False,'')
         """
         if self.c in ['.','#','&']: return
         i,_,_r = self._get_context()
@@ -591,6 +632,10 @@ class Parser(object):
             `li a:hover`
 
         Selectors are made of one or more Elements.
+
+
+        >>> Parser(".class > div + h1").parse_selector()
+        Selector([Element(Combinator(''), '.class', 0), Element(Combinator('>'), 'div', 9), Element(Combinator('+'), 'h1', 15)])
         """
         _ = self._
         elements = []
@@ -658,10 +703,9 @@ class Parser(object):
         because the `block` rule will be expecting it, but we still need to make sure
         it's there, if ';' was ommitted.
 
-        >>> p = Parser()
-        >>> bool(p.parse_end(";"))
+        >>> bool(Parser(";").parse_end())
         True
-        >>> bool(p.parse_end("}"))
+        >>> bool(Parser("}").parse_end())
         True
         """
         return self._(";") or self.peek("}")
@@ -669,16 +713,22 @@ class Parser(object):
 
     @trace
     def parse_url(self):
+        """
+        >>> Parser("url(https://google.com/foobar.gif)").parse_url()
+        URL(Anonymous('https://google.com/foobar.gif'),[])
+        """
         _ = self._
-        if self.c != 'u' or not self._r(r"/^url\(/"):
+        if self.c != 'u' or not self._r(r"^url\("):
             return
 
         value = _(self.parse_quoted) or _(self.parse_variable) \
-            or _(self.parse_data_uri) or _r(r"^[-\w%@$\/.&=:;#+?~]+") or ""
-
+            or _(self.parse_data_uri) or self._r(r"^[-\w%@$\/.&=:;#+?~]+") or ""
         self.expect(")")
 
-        return URL() # TODO: Implement this
+        if hasattr(value,'value') or hasattr(value,'data') or isinstance(value, Variable):
+            return URL(value)
+        else:
+            return URL(Anonymous(value), self.imports['paths'])
 
 
     @trace
@@ -692,13 +742,16 @@ class Parser(object):
 
         >>> p = Parser("Baskerville, Georgia, serif;")
         >>> p.parse_value()
+        Value([Expression([Keyword('Baskerville')]), Expression([Keyword('Georgia')]), Expression([Keyword('serif')])])
         """
         expressions = []
 
         while True:
             e = self._(self.parse_expression)
             expressions.append(e)
+            self._r(r"\s*")
             if not self._(","): break
+            self._r(r"\s*")
 
         if len(expressions) > 0:
             return Value(expressions)
@@ -710,7 +763,7 @@ class Parser(object):
 
         >>> p = Parser("@fink: 2px")
         >>> p.parse_variable_def()
-        "fink"
+        '@fink'
         """
         if self.c == "@":
             name = self._r(r"^(@[\w-]+)\s*:")
@@ -727,7 +780,7 @@ class Parser(object):
 
         >>> p = Parser("@fink")
         >>> p.parse_variable()
-        <Variable name=fink>
+        Variable(name='@fink',index=0,filename=None)
         """
         j = self.i
         if self.c == '@':
@@ -737,7 +790,8 @@ class Parser(object):
 
     @trace        
     def parse_data_uri(self):
-        raise NotImplementedError
+        if self._r(r"^data:"):
+            raise NotImplementedError
 
 
 

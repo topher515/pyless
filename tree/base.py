@@ -15,7 +15,12 @@ class ASTNode(object):
 		return not super(ASTNode,self).__eq__(other)
 
 
-class Anonymous(ASTNode): pass
+class Anonymous(ASTNode):
+	def __init__(self,val):
+		self.value = getattr(val,'value',val)
+	def __repr__(self):
+		return "Anonymous(%r)" % self.value
+
 class Assignment(ASTNode): pass
 
 class MixinDefinition(ASTNode):
@@ -58,7 +63,7 @@ class Combinator(ASTNode):
 		else:
 			self.value = value.strip() if value else ""
 	def __repr__(self):
-		return "Combinator(value=%r)" % self.value
+		return "Combinator(%r)" % self.value
 
 class Comment(ASTNode):
 	def __init__(self,value,silent):
@@ -97,7 +102,7 @@ class Element(ASTNode):
 		return "<Element '%s %s'>" % (self.combinator.value, self.value)
 
 	def __repr__(self):
-		return "Element(combinator=%r, value=%r, index=%r)" % (
+		return "Element(%r, %r, %r)" % (
 			self.combinator, self.value, self.index)
 
 
@@ -150,6 +155,8 @@ class Quoted(ASTNode):
 class Ratio(ASTNode):
 	def __init__(self,value):
 		self.value = value
+	def __repr__(self):
+		return "Ratio(%r)" % self.value
 
 class Rule(ASTNode):
 	def __init__(self, name, value, important, memo):
@@ -159,7 +166,7 @@ class Rule(ASTNode):
 		self.memo = memo
 
 	def __repr__(self):
-		return "Rule(%r,%r,important=%r,memo=%r)" % (
+		return "Rule(%r,%r,%r,%r)" % (
 			self.name, self.value, self.important, self.memo
 			)
 
@@ -185,10 +192,18 @@ class Selector(ASTNode):
 		return " ".join([str(x) for x in self.elements])
 
 	def __repr__(self):
-		return "Selector(elements=%r)" % self.elements
+		return "Selector(%r)" % self.elements
 
 
-class URL(ASTNode): pass
+class URL(ASTNode):
+	def __init__(self,value,paths):
+		if hasattr(value,'data'):
+			self.attrs = value
+		else:
+			self.value = value
+			self.paths = paths
+	def __repr__(self):
+		return "URL(%r,%r)" % (self.value,self.paths)
 
 
 class Value(ASTNode):
@@ -196,7 +211,7 @@ class Value(ASTNode):
 		self.value = value
 
 	def __repr__(self):
-		return "Value(value=%r)" % self.value
+		return "Value(%r)" % self.value
 
 class Variable(ASTNode):
 	def __init__(self, name, index, filename):
