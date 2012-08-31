@@ -1,4 +1,4 @@
-from pyless import parser
+import parser
 
 def run_doc_tests():
     import doctest

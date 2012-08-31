@@ -10,15 +10,20 @@ digits = set(string.digits)
 
 stack = []
 
+
+def log(msg):
+    #sys.stderr.write(msg)
+    #sys.stderr.flush()
+    print msg
+
 def trace(func):
-    return func
     def wrapped(self, *args, **kwargs):
         stack.append(" ")
         s = "".join(stack)
-        print "%s%s \t\t\t\t%s: %r..." % (s,func.__name__ ,self.i,self.next[:10])
+        log("%s%s \t\t\t\t%s: %r..." % (s,func.__name__ ,self.i,self.next[:10]))
         r = func(self, *args, **kwargs)
         if r:
-            print (s + repr(r))
+            log((s + repr(r)))
         stack.pop()
         return r
     # So doctests still work...
@@ -220,6 +225,46 @@ class Parser(object):
 
 
     @trace
+    def parse_conditions(self):
+        i,_,_r = self._get_context()
+        index = i
+        a = _(self.parse_condition)
+
+        if a:
+            while True:
+                if not _(","): break
+                b = _(self.parse_condition)
+                if not b: break
+                condition = Condition("or",condition or a, b, index)
+            return condition or a
+
+
+
+    @trace
+    def parse_condition(self):
+        negate = False
+        i,_,_r = self._get_context()
+        index = i
+        if _r(r"^not"):
+            negate = True
+
+        self.expect('(');
+        a = _(self.parse_addition) or _(self.parse_keyword) or _(self.parse_quoted)
+        if a:
+            op = _r(r"^(?:>=|=<|[<=>])")
+            if op:
+                b = _(self.parse_addition) or _(self.parse_keyword) or _(self.parse_quoted)
+                if b:
+                    c = Condition(op, a, b, index, negate)
+                else:
+                    raise ParseError("Expected expression")
+            else:
+                c = Condition('=', a, Keyword('true'), index, negate)
+            self.expect(")")
+            return Condition("and", c, (self.parse_condition)) if _r(r"^and") else c
+
+
+    @trace
     def parse_cssfunc_call(self):
         # TODO: Implement!
         return None
@@ -316,6 +361,7 @@ class Parser(object):
             e = self._(self.parse_addition) or self._(self.parse_entity)
             if not e: break
             entities.append(e)
+            self._r(r'\s*')
         if entities:
             return Expression(entities)
 
@@ -413,12 +459,19 @@ class Parser(object):
     @trace    
     def parse_mixin_definition(self):
         """
+
         A Mixin definition, with a list of parameters
-        >>> p = Parser(".rounded (@radius: 2px, @color) { .. }")
+
+        >>> p = Parser(".rounded (@radius: 2px) { width:@radius; }")
         >>> p.parse_mixin_definition()
+        MixinDefinition('.rounded',[{'name': '@radius', 'value': Expression([Dimension(2.0,'px')])}],[Rule('width',Value([Expression([Variable(name='@radius',index=32,filename=None)])]),False,'')],None,False)
+        >>> p = Parser(".rounded (@radius: 2px, @color) { color:@color; }")
+        >>> p.parse_mixin_definition()
+        MixinDefinition('.rounded',[{'name': '@radius', 'value': Expression([Dimension(2.0,'px')])}, {'name': '@color'}],[Rule('color',Value([Expression([Variable(name='@color',index=40,filename=None)])]),False,'')],None,False)
         """
         i,_,_r = self._get_context()
         variadic = False
+        cond = None
         params = []
         if (self.c != '.' and self.c != '#') or \
             self.peek(self._rec(r"^[^{]*(;|})")):
@@ -439,7 +492,7 @@ class Parser(object):
                             _(self.parse_keyword)
                 if param:
                     if isinstance(param,Variable):
-                        if _(':'):
+                        if _r(r':\s*'):
                             value = self.expect(self.parse_expression, 'expected expression')
                             params.append({"name": param.name, "value":value})
                         elif _(r"^\.{3}"):
@@ -458,13 +511,13 @@ class Parser(object):
 
             _r(r"\)\s*")
 
-            if _r(r"^when"):
-                conf = self.expect(self.parse_conditions, 'expected condition')
+            if _r(r"^when\s*"):
+                cond = self.expect(self.parse_conditions, 'expected condition')
 
             ruleset = _(self.parse_block)
 
             if ruleset:
-                return Definition(name,params,ruleset,cond,variadic)
+                return MixinDefinition(name,params,ruleset,cond,variadic)
 
     @trace
     def parse_multiplication(self):
